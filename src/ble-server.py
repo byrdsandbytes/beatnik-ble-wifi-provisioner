@@ -114,27 +114,8 @@ def attempt_connection():
     update_status(f"Connecting to {ssid}...")
 
     try:
-        # First, get the security type for the SSID
-        cmd_scan = ["nmcli", "-t", "-f", "SSID,SECURITY", "device", "wifi", "list"]
-        scan_process = subprocess.run(cmd_scan, capture_output=True, text=True, timeout=10)
-        security_type = "wpa-psk"  # Default to WPA-PSK if we can't determine
-        
-        if scan_process.returncode == 0:
-            for line in scan_process.stdout.strip().split('\n'):
-                if line.startswith(f"{ssid}:"):
-                    security = line.split(':')[1]
-                    if "WPA2" in security:
-                        security_type = "wpa2-psk"
-                    elif "WPA" in security:
-                        security_type = "wpa-psk"
-                    break
-
-        # Now connect with explicit security settings
-        cmd = [
-            "nmcli", "device", "wifi", "connect", ssid,
-            "password", password,
-            "security", security_type
-        ]
+        # Try connection with the standard command first
+        cmd = ["nmcli", "device", "wifi", "connect", ssid, "password", password]
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
         if process.returncode == 0:
@@ -142,13 +123,43 @@ def attempt_connection():
             logging.info("Successfully connected!")
             # In a real app, you might stop advertising here
         else:
-            error_msg = "Failed: Bad Password?"
-            if "Error: No network with SSID" in process.stderr:
-                error_msg = "Failed: SSID Not Found"
-            elif "802-11-wireless-security" in process.stderr:
-                error_msg = "Failed: Security Type Mismatch"
-            logging.error(f"Failed to connect: {process.stderr}")
-            update_status(error_msg)
+            # If the first attempt fails, try with a connection profile
+            logging.info("First connection attempt failed, trying with explicit connection profile...")
+            
+            # Create a new connection profile with explicit settings
+            profile_name = f"wifi-{ssid}"
+            cmd = [
+                "nmcli", "connection", "add",
+                "type", "wifi",
+                "con-name", profile_name,
+                "ifname", "wlan0",
+                "ssid", ssid,
+                "wifi-sec.key-mgmt", "wpa-psk",
+                "wifi-sec.psk", password
+            ]
+            create_profile = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if create_profile.returncode == 0:
+                # Try to activate the new connection
+                cmd = ["nmcli", "connection", "up", profile_name]
+                activate = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if activate.returncode == 0:
+                    update_status("Success! Connected.")
+                    logging.info("Successfully connected using connection profile!")
+                else:
+                    error_msg = "Failed: Bad Password?"
+                    if "Error: No network with SSID" in activate.stderr:
+                        error_msg = "Failed: SSID Not Found"
+                    logging.error(f"Failed to activate connection: {activate.stderr}")
+                    # Clean up the failed connection profile
+                    subprocess.run(["nmcli", "connection", "delete", profile_name], 
+                                capture_output=True, timeout=5)
+                    update_status(error_msg)
+            else:
+                error_msg = "Failed: Could not create connection profile"
+                logging.error(f"Failed to create connection profile: {create_profile.stderr}")
+                update_status(error_msg)
 
     except subprocess.TimeoutExpired:
         update_status("Failed: Timeout")
