@@ -19,7 +19,7 @@ DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
 
 # --- Your Custom Settings ---
 # Change these to customize your BLE device
-DEVICE_NAME = "beatnik-server"  # <-- Change this to customize the device name visible during scanning
+DEVICE_NAME = "beatnik"  # <-- Change this to customize the device name visible during scanning
 
 # --- Our Custom Application ---
 # We define our own object paths for our app, service, and characteristics
