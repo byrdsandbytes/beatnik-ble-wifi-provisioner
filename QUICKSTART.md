@@ -59,7 +59,8 @@ INFO:root:Advertising as 'Pi-Provisioner'...
 3. Find **"Pi-Provisioner"** in the list
 4. Tap to **Connect**
 5. Expand the service (UUID: `12345678...`)
-6. You'll see 4 characteristics:
+6. You'll see 5 characteristics:
+   - **WiFi Scan** - Scan for available networks (optional)
    - **SSID** - Write your Wi-Fi network name
    - **Password** - Write your Wi-Fi password
    - **Connect** - Write any value to trigger connection
@@ -67,11 +68,16 @@ INFO:root:Advertising as 'Pi-Provisioner'...
 
 ### Provisioning Steps
 
-1. **Write SSID**: Tap Write → Select "Text" → Enter network name → Send
-2. **Write Password**: Tap Write → Select "Text" → Enter password → Send
-3. **Enable Notifications** on Status (tap the 🔔 icon)
-4. **Trigger Connection**: Tap Write on Connect → Send any value
-5. **Watch Status**: Should show "Connecting..." then "Success! Connected."
+1. **(Optional) Scan for Networks**:
+   - Enable Notifications on WiFi Scan (tap 🔔)
+   - Tap Write on WiFi Scan → Send "1"
+   - Read WiFi Scan to see available networks
+   - Format: `NetworkName|Signal|Security` separated by `;`
+2. **Write SSID**: Tap Write → Select "Text" → Enter network name → Send
+3. **Write Password**: Tap Write → Select "Text" → Enter password → Send
+4. **Enable Notifications** on Status (tap the 🔔 icon)
+5. **Trigger Connection**: Tap Write on Connect → Send any value
+6. **Watch Status**: Should show "Connecting..." then "Success! Connected."
 
 ---
 
