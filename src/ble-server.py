@@ -33,15 +33,18 @@ SSID_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef1"
 PASS_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef2"
 CONNECT_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef3"
 STATUS_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef4"
+SCAN_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef5"  # New: WiFi scan characteristic
 
 # We'll store our data in these global-like variables
 class ProvisioningData:
     ssid = b""
     password = b""
     status = b"Ready"
+    available_networks = b""  # Store scan results
 
 data = ProvisioningData()
 status_char_instance = None # Global instance for status updates
+scan_char_instance = None  # Global instance for scan updates
 
 # --- Helper: Wi-Fi Connection Logic ---
 
@@ -49,6 +52,54 @@ def update_status(message_str):
     """Updates the status and prepares it for D-Bus."""
     if status_char_instance:
         status_char_instance.update_status(message_str)
+
+def update_scan_results(results_str):
+    """Updates the scan results and prepares it for D-Bus."""
+    if scan_char_instance:
+        scan_char_instance.update_scan_results(results_str)
+
+def scan_wifi_networks():
+    """Scans for available Wi-Fi networks using nmcli."""
+    logging.info("Scanning for available Wi-Fi networks...")
+    update_scan_results("Scanning...")
+    
+    try:
+        # Run nmcli to scan and list networks
+        # Format: SSID:SIGNAL:SECURITY (e.g., "MyNetwork:85:WPA2")
+        cmd = ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"]
+        process = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        
+        if process.returncode == 0:
+            # Parse the output
+            networks = []
+            lines = process.stdout.strip().split('\n')
+            
+            for line in lines:
+                if line.strip():
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        ssid = parts[0]
+                        signal = parts[1] if len(parts) > 1 else "?"
+                        security = parts[2] if len(parts) > 2 else "Open"
+                        
+                        # Skip empty SSIDs (hidden networks)
+                        if ssid:
+                            networks.append(f"{ssid}|{signal}|{security}")
+            
+            # Join networks with semicolon separator
+            result = ";".join(networks) if networks else "No networks found"
+            logging.info(f"Found {len(networks)} networks")
+            update_scan_results(result)
+        else:
+            error_msg = "Scan failed"
+            logging.error(f"Failed to scan: {process.stderr}")
+            update_scan_results(error_msg)
+    
+    except subprocess.TimeoutExpired:
+        update_scan_results("Scan timeout")
+    except Exception as e:
+        update_scan_results(f"Error: {str(e)}")
+        logging.error(f"Scan error: {e}")
 
 def attempt_connection():
     """Uses nmcli to connect to the Wi-Fi network."""
@@ -236,6 +287,36 @@ class StatusCharacteristic(BaseGATTCharacteristic):
         logging.info(f"Status read: {self.value.decode('utf-8', errors='replace')}")
         return list(self.value)
 
+class ScanCharacteristic(BaseGATTCharacteristic):
+    def __init__(self, service_path):
+        super().__init__(
+            service_path,
+            SCAN_CHAR_UUID,
+            ["read", "write", "notify"],
+            "WiFi Network Scan"
+        )
+        self.value = b"Ready to scan"
+
+    def update_scan_results(self, results_str):
+        """Updates the scan results and notifies subscribers."""
+        logging.info(f"Updating scan results: {results_str[:100]}...")  # Log first 100 chars
+        self.value = results_str.encode("utf-8")
+        self.emit_properties_changed({"Value": self.value})
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        logging.info("Scan results read")
+        return list(self.value)
+    
+    @method()
+    def WriteValue(self, value: "ay", options: "a{sv}"):
+        # Writing any value triggers a scan
+        logging.info("Scan characteristic written to. Starting Wi-Fi scan...")
+        # Run scan in the background, don't block D-Bus
+        asyncio.create_task(
+            asyncio.to_thread(scan_wifi_networks)
+        )
+
 # This class will hold all our characteristics
 class ProvisioningService(ServiceInterface):
     IFACE = "org.bluez.GattService1"
@@ -373,7 +454,7 @@ class SimpleAgent(ServiceInterface):
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    global status_char_instance
+    global status_char_instance, scan_char_instance
 
     # Connect to the D-Bus system bus (where BlueZ lives)
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
@@ -387,6 +468,8 @@ async def main():
     service.add_characteristic(ConnectCharacteristic(service.path))
     status_char_instance = StatusCharacteristic(service.path)
     service.add_characteristic(status_char_instance)
+    scan_char_instance = ScanCharacteristic(service.path)
+    service.add_characteristic(scan_char_instance)
 
     # --- 2. Publish everything on D-Bus ---
     # This makes our Python objects visible to other programs (like BlueZ)
