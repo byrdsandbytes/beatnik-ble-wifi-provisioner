@@ -156,7 +156,7 @@ class BaseGATTCharacteristic(ServiceInterface):
     def ReadValue(self, options: "a{sv}") -> "ay":  # 'ay' means 'array of bytes'
         """Default ReadValue method."""
         logging.warning(f"ReadValue called on non-readable char: {self._uuid}")
-        return []
+        return b""  # Return empty bytes instead of empty list
 
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
@@ -289,7 +289,7 @@ class StatusCharacteristic(BaseGATTCharacteristic):
         self.notifying = True
         # Send initial value immediately
         logging.info(f"Sending initial status value: {self.value.decode('utf-8', errors='replace')}")
-        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", self.value)}, [])
 
     @method()
     def StopNotify(self):
@@ -304,12 +304,12 @@ class StatusCharacteristic(BaseGATTCharacteristic):
         if self.notifying:
             # Send actual BLE notification using the Properties interface
             logging.info(f"Sending status notification: {message_str}")
-            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", self.value)}, [])
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
         logging.info(f"Status read: {self.value.decode('utf-8', errors='replace')}")
-        return list(self.value)
+        return self.value
 
 class ScanCharacteristic(BaseGATTCharacteristic):
     def __init__(self, service_path):
@@ -329,7 +329,7 @@ class ScanCharacteristic(BaseGATTCharacteristic):
         self.notifying = True
         # Send initial value immediately
         logging.info(f"Sending initial scan value: {self.value.decode('utf-8', errors='replace')}")
-        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", self.value)}, [])
 
     @method()
     def StopNotify(self):
@@ -344,12 +344,12 @@ class ScanCharacteristic(BaseGATTCharacteristic):
         if self.notifying:
             # Send actual BLE notification using the Properties interface
             logging.info(f"Sending scan notification with {len(self.value)} bytes")
-            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", self.value)}, [])
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
         logging.info("Scan results read")
-        return list(self.value)
+        return self.value
     
     @method()
     def WriteValue(self, value: "ay", options: "a{sv}"):
