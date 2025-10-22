@@ -174,6 +174,11 @@ class BaseGATTCharacteristic(ServiceInterface):
     @dbus_property(access=PropertyAccess.READ)
     def Flags(self) -> "as":  # 'as' means 'array of strings'
         return self._flags
+    
+    @signal()
+    def PropertiesChanged(self, interface: "s", changed: "a{sv}", invalidated: "as"):
+        """Signal emitted when a property changes. Used for BLE notifications."""
+        pass
         
     def add_descriptor(self, bus):
         """Adds the 'User Description' descriptor."""
@@ -275,12 +280,31 @@ class StatusCharacteristic(BaseGATTCharacteristic):
             "Connection Status"
         )
         self.value = b"Ready"
+        self.notifying = False  # Track if notifications are enabled
+
+    @method()
+    def StartNotify(self):
+        """Called when a client subscribes to notifications."""
+        logging.info(f"Status notifications enabled on {self._uuid}")
+        self.notifying = True
+        # Send initial value immediately
+        logging.info(f"Sending initial status value: {self.value.decode('utf-8', errors='replace')}")
+        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+
+    @method()
+    def StopNotify(self):
+        """Called when a client unsubscribes from notifications."""
+        logging.info(f"Status notifications disabled on {self._uuid}")
+        self.notifying = False
 
     def update_status(self, message_str):
         """Updates the status and notifies subscribers."""
         logging.info(f"Updating status: {message_str}")
         self.value = message_str.encode("utf-8")
-        self.emit_properties_changed({"Value": self.value})
+        if self.notifying:
+            # Send actual BLE notification using the Properties interface
+            logging.info(f"Sending status notification: {message_str}")
+            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
@@ -296,12 +320,31 @@ class ScanCharacteristic(BaseGATTCharacteristic):
             "WiFi Network Scan"
         )
         self.value = b"Ready to scan"
+        self.notifying = False  # Track if notifications are enabled
+
+    @method()
+    def StartNotify(self):
+        """Called when a client subscribes to notifications."""
+        logging.info(f"Scan notifications enabled on {self._uuid}")
+        self.notifying = True
+        # Send initial value immediately
+        logging.info(f"Sending initial scan value: {self.value.decode('utf-8', errors='replace')}")
+        self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
+
+    @method()
+    def StopNotify(self):
+        """Called when a client unsubscribes from notifications."""
+        logging.info(f"Scan notifications disabled on {self._uuid}")
+        self.notifying = False
 
     def update_scan_results(self, results_str):
         """Updates the scan results and notifies subscribers."""
         logging.info(f"Updating scan results: {results_str[:100]}...")  # Log first 100 chars
         self.value = results_str.encode("utf-8")
-        self.emit_properties_changed({"Value": self.value})
+        if self.notifying:
+            # Send actual BLE notification using the Properties interface
+            logging.info(f"Sending scan notification with {len(self.value)} bytes")
+            self.PropertiesChanged(DBUS_PROP_IFACE, {"Value": Variant("ay", list(self.value))}, [])
 
     @method()
     def ReadValue(self, options: "a{sv}") -> "ay":
