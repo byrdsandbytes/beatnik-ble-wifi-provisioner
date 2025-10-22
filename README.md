@@ -183,10 +183,11 @@ INFO:root:Advertising as 'Pi-Provisioner'...
 
 ### Setting Wi-Fi Credentials
 
-Once connected, you'll see a service with 4 characteristics:
+Once connected, you'll see a service with 5 characteristics:
 
 | Characteristic | UUID | Type | Description |
 |---------------|------|------|-------------|
+| **WiFi Scan** | `12345678-1234-5678-1234-56789abcdef5` | Read/Write/Notify | Scan for available networks |
 | **SSID** | `12345678-1234-5678-1234-56789abcdef1` | Write | Write your Wi-Fi network name |
 | **Password** | `12345678-1234-5678-1234-56789abcdef2` | Write | Write your Wi-Fi password |
 | **Connect** | `12345678-1234-5678-1234-56789abcdef3` | Write | Write any value to trigger connection |
@@ -194,33 +195,41 @@ Once connected, you'll see a service with 4 characteristics:
 
 #### Step-by-Step in nRF Connect:
 
-1. **Connect** to "Pi-Provisioner"
+1. **Connect** to "beatnik-server" (or your custom device name)
 2. **Expand** the service (UUID: `12345678-1234-5678-1234-56789abcdef0`)
-3. **Write SSID**: 
+3. **(Optional) Scan for Networks**:
+   - Enable Notifications on the WiFi Scan characteristic
+   - Tap "Write" on WiFi Scan and send any value (e.g., "1")
+   - Wait a few seconds for the scan to complete
+   - Read the WiFi Scan characteristic to see available networks
+   - Format: `SSID|Signal|Security` separated by semicolons
+   - Example: `MyNetwork|85|WPA2;GuestWiFi|72|Open;Office5G|65|WPA3`
+4. **Write SSID**: 
    - Tap the "Write" button on the SSID characteristic
    - Select "Text" format
    - Enter your Wi-Fi network name (e.g., "MyHomeWiFi")
    - Send
-4. **Write Password**:
+5. **Write Password**:
    - Tap "Write" on the Password characteristic
    - Select "Text" format
    - Enter your Wi-Fi password
    - Send
-5. **Enable Notifications** on Status characteristic (optional but recommended)
-6. **Trigger Connection**:
+6. **Enable Notifications** on Status characteristic (optional but recommended)
+7. **Trigger Connection**:
    - Tap "Write" on the Connect characteristic
    - Send any value (e.g., "1")
-7. **Watch Status** characteristic for updates:
+8. **Watch Status** characteristic for updates:
    - "Connecting to MyHomeWiFi..."
    - "Success! Connected." or "Failed: Bad Password?"
 
 ## How It Works
 
-1. **BLE Advertisement**: The script advertises itself as "Pi-Provisioner"
-2. **GATT Service**: Exposes a custom service with 4 characteristics
-3. **Write Credentials**: Client writes SSID and password
-4. **Connection Trigger**: Writing to Connect characteristic triggers `nmcli` to connect
-5. **Status Updates**: Status characteristic updates in real-time with connection progress
+1. **BLE Advertisement**: The script advertises itself with your custom device name
+2. **GATT Service**: Exposes a custom service with 5 characteristics
+3. **WiFi Scan**: Optionally scan for available networks using `nmcli`
+4. **Write Credentials**: Client writes SSID and password
+5. **Connection Trigger**: Writing to Connect characteristic triggers `nmcli` to connect
+6. **Status Updates**: Status characteristic updates in real-time with connection progress
 
 ## Configuration
 
