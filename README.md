@@ -226,10 +226,20 @@ Once connected, you'll see a service with 4 characteristics:
 
 ### Customize Device Name
 
-Edit line 293 in `src/ble-server.py`:
+**Easy Method** - Edit the constant at the top of `src/ble-server.py` (around line 17):
+
 ```python
-self.local_name = "Pi-Provisioner"  # Change this to your preferred name
+DEVICE_NAME = "Pi-Provisioner"  # <-- Change this to your preferred name
 ```
+
+This is the name that will appear when scanning for BLE devices in apps like nRF Connect.
+
+**Examples:**
+- `DEVICE_NAME = "MyPi"` → Shows as "MyPi" in scanners
+- `DEVICE_NAME = "IoT-Device-001"` → Shows as "IoT-Device-001"
+- `DEVICE_NAME = "WiFi Setup"` → Shows as "WiFi Setup"
+
+After changing the name, restart the script for changes to take effect.
 
 ### Use Custom UUIDs
 
@@ -312,6 +322,8 @@ sudo journalctl -u ble-provisioning.service -n 50
 ```
 
 ## Troubleshooting
+
+> 📖 **Detailed Troubleshooting**: For comprehensive troubleshooting steps, especially if you can't see your device when scanning, check out [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ### Virtual Environment Issues
 

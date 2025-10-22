@@ -17,6 +17,10 @@ AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
 DBUS_OM_IFACE = "org.freedesktop.DBus.ObjectManager"
 DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
 
+# --- Your Custom Settings ---
+# Change these to customize your BLE device
+DEVICE_NAME = "beatnik-server"  # <-- Change this to customize the device name visible during scanning
+
 # --- Our Custom Application ---
 # We define our own object paths for our app, service, and characteristics
 # This is just a unique name on D-Bus, like a folder path.
@@ -282,12 +286,14 @@ class Advertisement(ServiceInterface):
         super().__init__(self.IFACE)
         self.path = "/org/example/advertisement1"
         self.ad_type = "peripheral"
-        self.local_name = "Pi-Provisioner"
+        self.local_name = DEVICE_NAME  # Use the configurable device name
         self.service_uuids = [SERVICE_UUID]
         self.include_tx_power = True
         # iOS-friendly settings
         self.discoverable = True
         self.appearance = 0x0000  # Unknown appearance
+        # Additional manufacturer data for better visibility
+        self.manufacturer_data = {0xFFFF: [0x50, 0x69]}  # "Pi" in hex
 
     @method()
     def Release(self):
@@ -301,6 +307,8 @@ class Advertisement(ServiceInterface):
                 "LocalName": self.local_name,
                 "IncludeTxPower": self.include_tx_power,
                 "Discoverable": self.discoverable,
+                "Appearance": self.appearance,
+                "ManufacturerData": self.manufacturer_data,
             }
         }
         return props
@@ -435,6 +443,11 @@ async def main():
     await adapter_props.call_set("org.bluez.Adapter1", "Powered", Variant("b", True))
     logging.info("Adapter powered on")
     
+    # Set the adapter alias to match our desired device name
+    # This overrides the hostname that BlueZ uses by default
+    await adapter_props.call_set("org.bluez.Adapter1", "Alias", Variant("s", DEVICE_NAME))
+    logging.info(f"Adapter alias set to: {DEVICE_NAME}")
+    
     # Enable discoverable mode for BLE advertising (iOS requires this)
     await adapter_props.call_set("org.bluez.Adapter1", "Discoverable", Variant("b", True))
     await adapter_props.call_set("org.bluez.Adapter1", "DiscoverableTimeout", Variant("u", 0))
@@ -460,7 +473,8 @@ async def main():
     
     try:
         await ad_manager.call_register_advertisement(advertisement.path, {})
-        logging.info(f"Advertising as '{advertisement.local_name}'...")
+        logging.info(f"✅ Advertising as '{advertisement.local_name}' - Device should now be visible in BLE scanners!")
+        logging.info(f"   Service UUID: {SERVICE_UUID}")
     except Exception as e:
         logging.error(f"Failed to register advertisement: {e}")
         return
