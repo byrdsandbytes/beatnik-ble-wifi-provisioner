@@ -114,7 +114,27 @@ def attempt_connection():
     update_status(f"Connecting to {ssid}...")
 
     try:
-        cmd = ["nmcli", "device", "wifi", "connect", ssid, "password", password]
+        # First, get the security type for the SSID
+        cmd_scan = ["nmcli", "-t", "-f", "SSID,SECURITY", "device", "wifi", "list"]
+        scan_process = subprocess.run(cmd_scan, capture_output=True, text=True, timeout=10)
+        security_type = "wpa-psk"  # Default to WPA-PSK if we can't determine
+        
+        if scan_process.returncode == 0:
+            for line in scan_process.stdout.strip().split('\n'):
+                if line.startswith(f"{ssid}:"):
+                    security = line.split(':')[1]
+                    if "WPA2" in security:
+                        security_type = "wpa2-psk"
+                    elif "WPA" in security:
+                        security_type = "wpa-psk"
+                    break
+
+        # Now connect with explicit security settings
+        cmd = [
+            "nmcli", "device", "wifi", "connect", ssid,
+            "password", password,
+            "security", security_type
+        ]
         process = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
         if process.returncode == 0:
@@ -125,6 +145,8 @@ def attempt_connection():
             error_msg = "Failed: Bad Password?"
             if "Error: No network with SSID" in process.stderr:
                 error_msg = "Failed: SSID Not Found"
+            elif "802-11-wireless-security" in process.stderr:
+                error_msg = "Failed: Security Type Mismatch"
             logging.error(f"Failed to connect: {process.stderr}")
             update_status(error_msg)
 
