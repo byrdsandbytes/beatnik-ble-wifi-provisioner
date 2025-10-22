@@ -1,6 +1,8 @@
 # beatnik-ble-wifi-provisioner
 
- Python script that allows you to configure Wi-Fi credentials on a Raspberry Pi via Bluetooth Low Energy (BLE) using GATT characteristics. Perfect for headless Raspberry Pi setups where you need to connect to Wi-Fi without a keyboard/monitor.
+A Python script that allows you to configure Wi-Fi credentials on a Raspberry Pi via Bluetooth Low Energy (BLE) using GATT characteristics. Perfect for headless Raspberry Pi setups where you need to connect to Wi-Fi without a keyboard/monitor.
+
+> 🚀 **Quick Start**: Want to get started in 5 minutes? Check out [QUICKSTART.md](QUICKSTART.md)
 
 ## Features
 
@@ -25,44 +27,129 @@
 
 ## Installation
 
-### 1. Install System Dependencies
+Follow these steps to install and set up the BLE Wi-Fi provisioner on your Raspberry Pi (or any Linux system with Bluetooth).
+
+### Step 1: Install System Dependencies
+
+First, make sure your system has the required Bluetooth packages and Python:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y bluetooth bluez python3-pip
+sudo apt-get install -y bluetooth bluez python3-full python3-pip
 ```
 
-### 2. Install Python Dependencies
+**What this does:**
+- `bluetooth` & `bluez` - The Linux Bluetooth stack
+- `python3-full` - Complete Python installation (needed for venv on newer systems)
+- `python3-pip` - Python package installer
+
+### Step 2: Clone/Download This Repository
 
 ```bash
-pip3 install dbus-next
+# Option A: Clone with git
+git clone https://github.com/byrdsandbytes/beatnik-ble-wifi-provisioner.git
+cd beatnik-ble-wifi-provisioner
+
+# Option B: Download manually
+# Download the repository as a ZIP and extract it, then:
+cd beatnik-ble-wifi-provisioner
 ```
 
-### 3. Download the Script
+### Step 3: Set Up Python Virtual Environment
+
+Now run the automated setup script:
 
 ```bash
-# Clone or download ble-test.py to your Raspberry Pi
-wget https://your-repo/ble-test.py
-# or
-git clone https://your-repo/ble-provisioning.git
-cd ble-provisioning
+# Make the setup script executable (only needed once)
+chmod +x setup-venv.sh
+
+# Run the setup script
+./setup-venv.sh
 ```
 
-### 4. Enable Bluetooth Service
+**What this does:**
+1. Creates a virtual environment in `venv/` directory
+2. Activates the virtual environment
+3. Upgrades pip to the latest version
+4. Installs all Python dependencies from `requirements.txt` (currently just `dbus-next`)
+
+You should see output like:
+```
+Creating Python virtual environment...
+Activating virtual environment...
+Installing dependencies...
+...
+✅ Setup complete!
+```
+
+### Step 4: Enable Bluetooth Service
+
+Make sure the Bluetooth service is running:
 
 ```bash
 sudo systemctl enable bluetooth
 sudo systemctl start bluetooth
+
+# Verify it's running
+sudo systemctl status bluetooth
 ```
+
+You should see `active (running)` in green.
+
+### Step 5: Test the Installation
+
+Activate the virtual environment and run the script:
+
+```bash
+# Activate the virtual environment
+source venv/bin/activate
+
+# Run the BLE server (requires sudo for Bluetooth access)
+sudo venv/bin/python3 src/ble-server.py
+```
+
+**Important:** Even when using `sudo`, you must specify the full path to the Python interpreter in the venv (`venv/bin/python3`), otherwise sudo will use the system Python which doesn't have the packages installed.
+
+You should see output like:
+```
+INFO:root:Using Bluetooth adapter: /org/bluez/hci0
+INFO:root:Adapter powered on
+INFO:root:Adapter set to always discoverable
+INFO:root:Pairing disabled - iOS connects without bonding
+INFO:root:GATT application registered successfully.
+INFO:root:Advertising as 'Pi-Provisioner'...
+```
+
+✅ **Success!** Your Raspberry Pi is now advertising as a BLE device.
+
+### Step 6: Connect from Your Phone
+
+See the [Connecting from Your Device](#connecting-from-your-device) section below for instructions on how to connect and provision Wi-Fi.
 
 ## Usage
 
 ### Running the Script
 
+Every time you want to run the BLE provisioning server:
+
 ```bash
-# Run with sudo (required for Bluetooth access)
-sudo python3 ble-test.py
+# 1. Navigate to the project directory
+cd beatnik-ble-wifi-provisioner
+
+# 2. Activate the virtual environment
+source venv/bin/activate
+
+# 3. Run the server with sudo
+sudo venv/bin/python3 src/ble-server.py
 ```
+
+**Why `sudo venv/bin/python3`?**
+- `sudo` is required for Bluetooth low-level access
+- `venv/bin/python3` ensures you're using the Python with installed packages
+- Just `sudo python3` would use the system Python without your packages!
+
+**To stop the server:**
+Press `Ctrl+C` in the terminal.
 
 You should see output like:
 ```
@@ -139,14 +226,14 @@ Once connected, you'll see a service with 4 characteristics:
 
 ### Customize Device Name
 
-Edit line 293 in `ble-test.py`:
+Edit line 293 in `src/ble-server.py`:
 ```python
 self.local_name = "Pi-Provisioner"  # Change this to your preferred name
 ```
 
 ### Use Custom UUIDs
 
-Edit lines 27-31:
+Edit lines 27-31 in `src/ble-server.py`:
 ```python
 SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"  # Your custom service UUID
 SSID_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef1"
@@ -155,46 +242,113 @@ CONNECT_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef3"
 STATUS_CHAR_UUID = "12345678-1234-5678-1234-56789abcdef4"
 ```
 
-### Run on Boot
+### Run on Boot (Auto-start as a Service)
 
-Create a systemd service:
+To make the BLE provisioner start automatically when your Raspberry Pi boots:
+
+**Step 1:** Create a systemd service file:
 
 ```bash
 sudo nano /etc/systemd/system/ble-provisioning.service
 ```
 
-Add:
+**Step 2:** Add this configuration (update paths if needed):
+
 ```ini
 [Unit]
 Description=BLE Wi-Fi Provisioning Service
-After=bluetooth.service
+After=bluetooth.service network.target
 Requires=bluetooth.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/ble-test.py
-WorkingDirectory=/home/pi
+# Update this path to match your installation location
+ExecStart=/home/pi/beatnik-ble-wifi-provisioner/venv/bin/python3 /home/pi/beatnik-ble-wifi-provisioner/src/ble-server.py
+WorkingDirectory=/home/pi/beatnik-ble-wifi-provisioner
 Restart=always
+RestartSec=5
 User=root
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+**Step 3:** Enable and start the service:
+
 ```bash
+# Reload systemd to recognize the new service
+sudo systemctl daemon-reload
+
+# Enable the service to start on boot
 sudo systemctl enable ble-provisioning.service
+
+# Start the service now
 sudo systemctl start ble-provisioning.service
 ```
 
-Check status:
+**Step 4:** Check that it's running:
+
 ```bash
+# Check service status
 sudo systemctl status ble-provisioning.service
+
+# View live logs
+sudo journalctl -u ble-provisioning.service -f
+```
+
+**Managing the service:**
+```bash
+# Stop the service
+sudo systemctl stop ble-provisioning.service
+
+# Restart the service
+sudo systemctl restart ble-provisioning.service
+
+# Disable auto-start on boot
+sudo systemctl disable ble-provisioning.service
+
+# View recent logs
+sudo journalctl -u ble-provisioning.service -n 50
 ```
 
 ## Troubleshooting
 
-### "Failed to introspect BlueZ service"
+### Virtual Environment Issues
+
+**"No module named 'dbus_next'" when running with sudo**
+```bash
+# Make sure you're using the venv Python, not system Python:
+sudo venv/bin/python3 src/ble-server.py
+
+# NOT just:
+sudo python3 src/ble-server.py  # ❌ This uses system Python
+```
+
+**"venv/bin/python3: No such file or directory"**
+```bash
+# The virtual environment wasn't created. Run setup again:
+./setup-venv.sh
+```
+
+**"Permission denied: ./setup-venv.sh"**
+```bash
+# Make the script executable:
+chmod +x setup-venv.sh
+./setup-venv.sh
+```
+
+**Want to recreate the virtual environment from scratch?**
+```bash
+# Delete the old venv
+rm -rf venv
+
+# Run setup again
+./setup-venv.sh
+```
+
+### Bluetooth Issues
+
+**"Failed to introspect BlueZ service"
 ```bash
 sudo systemctl start bluetooth
 sudo systemctl status bluetooth
@@ -288,6 +442,52 @@ For issues and questions:
 4. Test with nRF Connect first before trying other apps
 
 ---
+
+## Quick Reference
+
+### First-time Setup
+```bash
+# 1. Install system packages
+sudo apt-get update
+sudo apt-get install -y bluetooth bluez python3-full python3-pip
+
+# 2. Clone the repository
+git clone https://github.com/byrdsandbytes/beatnik-ble-wifi-provisioner.git
+cd beatnik-ble-wifi-provisioner
+
+# 3. Run setup script
+chmod +x setup-venv.sh
+./setup-venv.sh
+
+# 4. Enable Bluetooth
+sudo systemctl enable bluetooth
+sudo systemctl start bluetooth
+```
+
+### Running the Server
+```bash
+cd beatnik-ble-wifi-provisioner
+source venv/bin/activate
+sudo venv/bin/python3 src/ble-server.py
+```
+
+### Common Commands
+```bash
+# Check Bluetooth status
+sudo systemctl status bluetooth
+
+# View Bluetooth devices
+hciconfig
+
+# Restart Bluetooth
+sudo systemctl restart bluetooth
+
+# Recreate virtual environment
+rm -rf venv && ./setup-venv.sh
+
+# Check if process is running
+ps aux | grep ble-server
+```
 
 **Pro Tip**: For production IoT devices, consider building a companion mobile app using:
 - iOS: CoreBluetooth framework
