@@ -7,9 +7,11 @@ python3 -m venv venv
 echo "Activating virtual environment..."
 source venv/bin/activate
 
+echo "Upgrading pip..."
+pip install --upgrade pip --quiet
+
 echo "Installing dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt --quiet
 
 echo ""
 echo "✅ Setup complete!"
