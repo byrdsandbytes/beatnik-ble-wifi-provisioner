@@ -452,6 +452,10 @@ class Advertisement(ServiceInterface):
         self.appearance = 0x0000  # Unknown appearance
         # Additional manufacturer data for better visibility
         self.manufacturer_data = {0xFFFF: [0x50, 0x69]}  # "Pi" in hex
+        # Add flags for better service visibility
+        self.flags = ["general-discoverable", "le-only"]
+        # Explicitly include service data
+        self.service_data = {SERVICE_UUID: [0x00]}  # Adding minimal service data
 
     @method()
     def Release(self):
@@ -467,6 +471,8 @@ class Advertisement(ServiceInterface):
                 "Discoverable": self.discoverable,
                 "Appearance": self.appearance,
                 "ManufacturerData": self.manufacturer_data,
+                "Flags": self.flags,
+                "ServiceData": self.service_data
             }
         }
         return props
