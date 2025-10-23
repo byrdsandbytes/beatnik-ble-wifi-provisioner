@@ -19,7 +19,7 @@ DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
 
 # --- Your Custom Settings ---
 # Change these to customize your BLE device
-DEVICE_NAME = "beatnik"  # <-- Change this to customize the device name visible during scanning
+DEVICE_NAME = "beatnik"  # <-- This name will now be used everywhere
 
 # --- Our Custom Application ---
 # We define our own object paths for our app, service, and characteristics
@@ -35,6 +35,12 @@ PASS_CHAR_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 CONNECT_CHAR_UUID = "6E400004-B5A3-F393-E0A9-E50E24DCCA9E"
 STATUS_CHAR_UUID = "6E400005-B5A3-F393-E0A9-E50E24DCCA9E"
 SCAN_CHAR_UUID = "6E400006-B5A3-F393-E0A9-E50E24DCCA9E"
+
+# --- Standard GAP (Generic Access Profile) UUIDs ---
+# We define these to override the default BlueZ name
+GAP_SERVICE_UUID = "00001800-0000-1000-8000-00805f9b34fb"
+DEVICE_NAME_CHAR_UUID = "00002a00-0000-1000-8000-00805f9b34fb"
+
 
 # We'll store our data in these global-like variables
 class ProvisioningData:
@@ -394,6 +400,75 @@ class ScanCharacteristic(BaseGATTCharacteristic):
             asyncio.to_thread(scan_wifi_networks)
         )
 
+# --- START: NEW CLASSES TO FIX DEVICE NAME ---
+
+class DeviceNameCharacteristic(BaseGATTCharacteristic):
+    """
+    Overrides the default 0x2A00 Device Name characteristic.
+    This ensures the 'device.name' in iOS matches our 'localName'.
+    """
+    def __init__(self, service_path):
+        super().__init__(
+            service_path,
+            DEVICE_NAME_CHAR_UUID,
+            ["read"],  # Device Name is typically read-only
+            "Device Name"
+        )
+        self.value = DEVICE_NAME.encode("utf-8")
+
+    @method()
+    def ReadValue(self, options: "a{sv}") -> "ay":
+        logging.info(f"GAP Device Name read: {self.value.decode('utf-8')}")
+        return self.value
+
+class GenericAccessService(ServiceInterface):
+    """
+    The standard 0x1800 Generic Access Service.
+    We must define this to override the BlueZ default name.
+    """
+    IFACE = "org.bluez.GattService1"
+
+    def __init__(self):
+        super().__init__(self.IFACE)
+        self.path = f"{APP_PATH}/gap_service"  # A unique path for this service
+        self._uuid = GAP_SERVICE_UUID
+        self._primary = True  # GAP is a primary service
+        self.characteristics = []
+
+    @dbus_property(access=PropertyAccess.READ)
+    def UUID(self) -> "s":
+        return self._uuid
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Primary(self) -> "b":
+        return self._primary
+
+    def add_characteristic(self, char):
+        self.characteristics.append(char)
+
+    def get_paths(self):
+        """Gets all D-Bus paths for this service and its children."""
+        paths = {self.path: [self.IFACE]}
+        for char in self.characteristics:
+            paths[char.path] = [char.IFACE, "org.freedesktop.DBus.Properties"]
+            # Add descriptor path
+            paths[f"{char.path}/desc0"] = [Descriptor.IFACE, "org.freedesktop.DBus.Properties"]
+        return paths
+
+    def get_properties(self):
+        """Gets all D-Bus properties for this service."""
+        return {
+            self.IFACE: {
+                "UUID": self._uuid,
+                "Primary": self._primary,
+                # This tells BlueZ which characteristics belong to this service
+                "Characteristics": [char.path for char in self.characteristics],
+            }
+        }
+
+# --- END: NEW CLASSES ---
+
+
 # This class will hold all our characteristics
 class ProvisioningService(ServiceInterface):
     IFACE = "org.bluez.GattService1"
@@ -445,7 +520,7 @@ class Advertisement(ServiceInterface):
         self.path = "/org/example/advertisement1"
         self.ad_type = "peripheral"
         self.local_name = DEVICE_NAME  # Use the configurable device name
-        self.service_uuids = [SERVICE_UUID]
+        self.service_uuids = [SERVICE_UUID, GAP_SERVICE_UUID] # Advertise both
         self.include_tx_power = True
         # iOS-friendly settings
         self.discoverable = True
@@ -536,37 +611,56 @@ async def main():
     # Connect to the D-Bus system bus (where BlueZ lives)
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
 
-    # --- 1. Define Service and Characteristics ---
-    service = ProvisioningService()
+    # --- 1. Define Services and Characteristics ---
     
-    # Add characteristics to the service
-    service.add_characteristic(SSIDCharacteristic(service.path))
-    service.add_characteristic(PasswordCharacteristic(service.path))
-    service.add_characteristic(ConnectCharacteristic(service.path))
-    status_char_instance = StatusCharacteristic(service.path)
-    service.add_characteristic(status_char_instance)
-    scan_char_instance = ScanCharacteristic(service.path)
-    service.add_characteristic(scan_char_instance)
+    # --- Service 1: Our Custom Provisioning Service ---
+    prov_service = ProvisioningService()
+    
+    # Add characteristics to the provisioning service
+    prov_service.add_characteristic(SSIDCharacteristic(prov_service.path))
+    prov_service.add_characteristic(PasswordCharacteristic(prov_service.path))
+    prov_service.add_characteristic(ConnectCharacteristic(prov_service.path))
+    status_char_instance = StatusCharacteristic(prov_service.path)
+    prov_service.add_characteristic(status_char_instance)
+    scan_char_instance = ScanCharacteristic(prov_service.path)
+    prov_service.add_characteristic(scan_char_instance)
+
+    # --- Service 2: The Standard GAP Service (to fix the name) ---
+    gap_service = GenericAccessService()
+    gap_service.add_characteristic(DeviceNameCharacteristic(gap_service.path))
+
 
     # --- 2. Publish everything on D-Bus ---
     # This makes our Python objects visible to other programs (like BlueZ)
-    bus.export(service.path, service)
-    for char in service.characteristics:
-        bus.export(char.path, char)
-        char.add_descriptor(bus)
+    
+    all_services = [prov_service, gap_service]
+
+    for service in all_services:
+        bus.export(service.path, service)
+        for char in service.characteristics:
+            bus.export(char.path, char)
+            char.add_descriptor(bus)
+
 
     # We must also publish all our objects under the DBus.ObjectManager
     # This is how BlueZ discovers all the paths at once
+    
+    # --- MODIFIED: ApplicationObjectManager ---
+    # --- Now handles a LIST of services ---
     class ApplicationObjectManager(ServiceInterface):
-        def __init__(self, service):
+        def __init__(self, services):
             super().__init__(DBUS_OM_IFACE)
-            self.service = service
+            self.services = services
         
         @method()
         def GetManagedObjects(self) -> "a{oa{sa{sv}}}":
-            return self.service.get_paths()
+            paths = {}
+            for service in self.services:
+                paths.update(service.get_paths())
+            return paths
     
-    obj_manager = ApplicationObjectManager(service)
+    # Pass the LIST of services to the manager
+    obj_manager = ApplicationObjectManager(all_services)
     bus.export(APP_PATH, obj_manager)
 
     # --- 3. Find the Bluetooth adapter ---
@@ -579,8 +673,8 @@ async def main():
         return
     
     obj = bus.get_proxy_object(BLUEZ_SERVICE, "/", introspection)
-    obj_manager = obj.get_interface(DBUS_OM_IFACE)
-    objects = await obj_manager.call_get_managed_objects()
+    obj_manager_iface = obj.get_interface(DBUS_OM_IFACE)
+    objects = await obj_manager_iface.call_get_managed_objects()
     
     adapter_path = None
     for path, interfaces in objects.items():
